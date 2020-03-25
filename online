@@ -1,0 +1,75 @@
+import torch
+from influxdb import InfluxDBClient
+from influxdb import SeriesHelper
+from torch import nn
+from torch import optim
+from offline1 import FaultDetectNet
+import numpy as np
+import pandas as pd
+
+checkpoint = torch.load(offline_nn.tar)
+model = FaultDetectNet()
+model.load_state_dict(checkpoint['model_state_dict'])
+model.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+model.loss = checkpoint['loss']
+#getdatafromdatabasetoclassify
+#host = 'public@10.176.67.83'
+#port = 8086
+#user = 'public'
+#pwd = 'public'
+#db = 'team_3_online'
+#client1 = InfluxDBClient(host, port, user, pwd,db)#connecttodb
+client1 = InfluxDBClient(host='10.176.67.83', port=8086)  # client that reads/writes db with pandas dataframes
+client1.switch_database('team_3_online')
+X_torch = None
+Y_torch = None
+select_clause = 'select * from bearing where mw = ' + str(batch_no)
+client1.create_continuous_query('getDW', select_clause, 'team_3_online', 'DW')
+results = client1.get_list_continuous_queries()
+#query = 'select * from bearing where mw = ' + str(batch_no)
+#results = client1.query(query)
+if results:
+        results_df = results['bearing']
+        x_np = results_df.take([0,2,5], axis=1).to_numpy()
+        X_torch = torch.tensor(x_np).type(torch.FloatTensor).float()
+        y_np = results_df.take([1], axis=1).to_numpy().astype(float)
+        Y_torch = torch.from_numpy(y_np).float()
+model.fit(X_torch,Y_torch)
+#testing
+client2 = InfluxDBClient(host='10.176.67.83', port=8086)  # client that reads/writes db with pandas dataframes
+client2.switch_database('team_3_online_test')
+X_torch = None
+Y_torch = None
+model.eval()
+#for loop:if size=RTW
+select_clause = 'select * from bearing where mw = ' + str(batch_no)
+client2.create_continuous_query('getRTW', select_clause, 'team_3_online', 'RTW')
+results2 = client2.get_list_continuous_queries()
+if results2:
+        results2_df = results['bearing']
+        x_np = results2_df.take([0,2,5], axis=1).to_numpy()
+        X_torch2 = torch.tensor(x_np).type(torch.FloatTensor).float()
+        y_np = results2_df.take([1], axis=1).to_numpy().astype(float)
+        Y_torch2 = torch.from_numpy(y_np).float()
+pred=model(X_torch2)
+#test
+#write to database3
+#host = 'public@10.176.67.83'
+#port = 8086
+#user = 'public'
+#pwd = 'public'
+#db = 'team_3_test_online'
+#client2 = InfluxDBClient(host, port, user, pwd,db)
+client3 = InfluxDBClient(host='10.176.67.83', port=8086)  # client that reads/writes db with pandas dataframes
+client3.switch_database('team_3_detect')
+class SeriesHelper(SeriesHelper):
+    class Meta:
+        #client = client3
+        #series_name = 'events.stats.{server_name}'
+        #fields = ['metric', 'timestamp', 'label', 'sr', 'rate', 'gs','load']
+        #tags = ['server_name']
+        #bulk_size = 5
+        #autocommit = True
+        #send chunk of data
+#SeriesHelper(server_name ='gen_data', metric = , timestamp = , label = , sr = , rate = , gs = , load = , )
+#SeriesHelper.commit()
